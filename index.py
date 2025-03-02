@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk  # Import ttk
 from tkinter import filedialog, messagebox, scrolledtext, font, simpledialog
 import keyword
 
@@ -10,7 +11,7 @@ class TextEditor:
         self.root.geometry("800x600")
 
         # Tabs
-        self.tab_control = tk.ttk.Notebook(self.root)
+        self.tab_control = ttk.Notebook(self.root)  # Now works with ttk
         self.tab_control.pack(expand=1, fill="both")
 
         # Create the first tab (new file)
