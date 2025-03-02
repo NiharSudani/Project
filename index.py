@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, font
+from tkinter import filedialog, messagebox, scrolledtext, font, simpledialog
+import keyword
 
 
 class TextEditor:
@@ -8,9 +9,12 @@ class TextEditor:
         self.root.title("Text Editor")
         self.root.geometry("800x600")
 
-        # Text Area
-        self.text_area = scrolledtext.ScrolledText(self.root, undo=True, wrap="word")
-        self.text_area.pack(fill=tk.BOTH, expand=True)
+        # Tabs
+        self.tab_control = tk.ttk.Notebook(self.root)
+        self.tab_control.pack(expand=1, fill="both")
+
+        # Create the first tab (new file)
+        self.new_file()
 
         # Menu Bar
         self.menu_bar = tk.Menu(self.root)
@@ -23,15 +27,14 @@ class TextEditor:
         file_menu.add_command(label="Save", accelerator="Ctrl+S", command=self.save_file)
         file_menu.add_command(label="Save As", accelerator="Ctrl+Shift+S", command=self.save_as)
         file_menu.add_separator()
-        file_menu.add_command(label="New Window", accelerator="Ctrl+N", command=self.new_window)
-        file_menu.add_command(label="Save All", accelerator="Ctrl+Alt+S")
-        file_menu.add_separator()
         file_menu.add_command(label="Exit", accelerator="Ctrl+Q", command=self.exit_editor)
-
         self.menu_bar.add_cascade(label="File", menu=file_menu)
 
         # Edit Menu
         edit_menu = tk.Menu(self.menu_bar, tearoff=0)
+        edit_menu.add_command(label="Find", accelerator="Ctrl+F", command=self.find_text)
+        edit_menu.add_command(label="Replace", accelerator="Ctrl+H", command=self.replace_text)
+        edit_menu.add_separator()
         edit_menu.add_command(label="Undo", accelerator="Ctrl+Z", command=self.text_area.edit_undo)
         edit_menu.add_command(label="Redo", accelerator="Ctrl+Y", command=self.text_area.edit_redo)
         edit_menu.add_separator()
@@ -39,36 +42,30 @@ class TextEditor:
         edit_menu.add_command(label="Copy", accelerator="Ctrl+C", command=self.copy_text)
         edit_menu.add_command(label="Paste", accelerator="Ctrl+V", command=self.paste_text)
         edit_menu.add_command(label="Delete", accelerator="Del", command=self.delete_text)
-        edit_menu.add_separator()
-        edit_menu.add_command(label="Find", accelerator="Ctrl+F")
-        edit_menu.add_command(label="Replace", accelerator="Ctrl+H")
-        edit_menu.add_separator()
-        edit_menu.add_command(label="Font", command=self.choose_font)
-        edit_menu.add_command(label="Date/Time", command=self.insert_datetime)
-
         self.menu_bar.add_cascade(label="Edit", menu=edit_menu)
 
         # View Menu
         view_menu = tk.Menu(self.menu_bar, tearoff=0)
-        view_menu.add_checkbutton(label="Status Bar")
-        view_menu.add_checkbutton(label="Word Wrap", command=self.toggle_wrap)
-        zoom_menu = tk.Menu(view_menu, tearoff=0)
-        zoom_menu.add_command(label="Zoom In", accelerator="Ctrl+Plus")
-        zoom_menu.add_command(label="Zoom Out", accelerator="Ctrl+Minus")
-        zoom_menu.add_command(label="Default Zoom", accelerator="Ctrl+0")
-        view_menu.add_cascade(label="Zoom", menu=zoom_menu)
-
+        view_menu.add_command(label="Dark Mode", command=self.toggle_dark_mode)
         self.menu_bar.add_cascade(label="View", menu=view_menu)
 
-        # Shortcuts
-        self.root.bind("<Control-n>", lambda event: self.new_window())
-        self.root.bind("<Control-o>", lambda event: self.open_file())
-        self.root.bind("<Control-s>", lambda event: self.save_file())
-        self.root.bind("<Control-Shift-S>", lambda event: self.save_as())
-        self.root.bind("<Control-q>", lambda event: self.exit_editor())
+        # Status Bar
+        self.status_bar = tk.Label(self.root, text="Line 1, Column 1", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Update the status bar when the cursor moves
+        self.text_area.bind("<KeyRelease>", self.update_status)
+        self.text_area.bind("<ButtonRelease-1>", self.update_status)
+
+        # Auto-save functionality
+        self.auto_save_interval = 300  # 5 minutes
+        self.auto_save()
 
     def new_file(self):
-        self.text_area.delete(1.0, tk.END)
+        tab = tk.Frame(self.tab_control)
+        self.text_area = scrolledtext.ScrolledText(tab, undo=True, wrap="word")
+        self.text_area.pack(expand=True, fill="both")
+        self.tab_control.add(tab, text="Untitled")
 
     def open_file(self):
         file_path = filedialog.askopenfilename()
@@ -87,12 +84,6 @@ class TextEditor:
     def save_as(self):
         self.save_file()
 
-    def new_window(self):
-        self.root.destroy()
-        root = tk.Tk()
-        TextEditor(root)
-        root.mainloop()
-
     def exit_editor(self):
         self.root.quit()
 
@@ -108,16 +99,42 @@ class TextEditor:
     def delete_text(self):
         self.text_area.delete(tk.SEL_FIRST, tk.SEL_LAST)
 
-    def choose_font(self):
-        new_font = font.Font(family="Arial", size=12)
-        self.text_area.configure(font=new_font)
+    def find_text(self):
+        search_term = simpledialog.askstring("Find", "Enter text to search:")
+        if search_term:
+            start_idx = '1.0'
+            while True:
+                start_idx = self.text_area.search(search_term, start_idx, stopindex=tk.END)
+                if not start_idx:
+                    break
+                end_idx = f"{start_idx}+{len(search_term)}c"
+                self.text_area.tag_add('found', start_idx, end_idx)
+                self.text_area.tag_config('found', background='yellow')
+                start_idx = end_idx
 
-    def insert_datetime(self):
-        from datetime import datetime
-        self.text_area.insert(tk.END, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    def replace_text(self):
+        search_term = simpledialog.askstring("Find", "Enter text to search:")
+        replace_term = simpledialog.askstring("Replace", "Enter replacement text:")
+        if search_term and replace_term:
+            content = self.text_area.get(1.0, tk.END)
+            new_content = content.replace(search_term, replace_term)
+            self.text_area.delete(1.0, tk.END)
+            self.text_area.insert(tk.END, new_content)
 
-    def toggle_wrap(self):
-        self.text_area.config(wrap=tk.WORD if self.text_area.cget("wrap") == "none" else "none")
+    def toggle_dark_mode(self):
+        current_bg = self.text_area.cget("background")
+        if current_bg == "black":
+            self.text_area.config(background="white", foreground="black")
+        else:
+            self.text_area.config(background="black", foreground="white")
+
+    def auto_save(self):
+        self.save_file()  # Call the save method
+        self.root.after(self.auto_save_interval * 1000, self.auto_save)  # Repeat every interval
+
+    def update_status(self, event=None):
+        line, column = self.text_area.index(tk.INSERT).split(".")
+        self.status_bar.config(text=f"Line {line}, Column {column}")
 
 
 if __name__ == "__main__":
